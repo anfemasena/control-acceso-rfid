@@ -122,6 +122,9 @@ AccessStatus requestAccess(const String& uid, String& personName, String& moveme
   JsonDocument request;
   request["uid"] = uid;
   request["device"] = DEVICE_NAME;
+  // Identificador unico por lectura; se mantiene identico durante sus reintentos.
+  request["requestId"] = String((uint32_t)esp_random(), HEX) + "-" +
+      String((uint32_t)esp_random(), HEX) + "-" + String(millis(), HEX);
   String payload;
   serializeJson(request, payload);
 
