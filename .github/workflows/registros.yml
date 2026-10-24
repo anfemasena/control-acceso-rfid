@@ -17,3 +17,11 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: PostgreSQL local para pruebas
+        run: |
+          docker run -d --name nusefa-pg -e POSTGRES_PASSWORD=prueba -e POSTGRES_USER=nusefa -e POSTGRES_DB=nusefa -p 127.0.0.1:5433:5432 postgres:17-alpine
+          for i in $(seq 1 30); do docker exec nusefa-pg pg_isready -U nusefa -d nusefa && break; sleep 1; done
+      - name: Integracion PostgreSQL
+        env:
+          DATABASE_URL: postgresql://nusefa:prueba@127.0.0.1:5433/nusefa
+        run: node tests/postgres.test.js
