@@ -21,7 +21,7 @@ assert.match(firmwareCode, /request\["requestId"\]/);
   const fake = vm.createContext({
     require(n) { if (n === "pg") return { Pool: class {} }; return require(n); },
     process: { env },
-    console, URL, Date, Intl, Buffer,
+    console, URL, Date, Intl, Buffer, __dirname: path.resolve(__dirname, ".."),
   });
   assert.throws(() => vm.runInContext(serverCode, fake), /DATABASE_URL obligatorio/);
 }
@@ -36,7 +36,7 @@ const runtime = vm.createContext({
     return require(n);
   },
   process: { env: { DATA_DIR: directory, ADMIN_USER: "admin", ADMIN_PASSWORD: "clave-de-prueba", PORT: "39998" } },
-  console, URL, Date, Intl, Buffer, String, Number, Boolean, Object, Array, Set,
+  console, URL, Date, Intl, Buffer, __dirname: path.resolve(__dirname, ".."), String, Number, Boolean, Object, Array, Set,
 });
 vm.runInContext(serverCode, runtime, { filename: "server.js" });
 assert.equal(typeof handler, "function");
