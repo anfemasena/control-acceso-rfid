@@ -15,7 +15,7 @@ const sessions = new Set();
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: /(?:localhost|127\\.0\\.0\\.1)/.test(new URL(process.env.DATABASE_URL).hostname) ? false : { rejectUnauthorized: false },
+      ssl: ["localhost", "127.0.0.1"].includes(new URL(process.env.DATABASE_URL).hostname) ? false : { rejectUnauthorized: false },
     })
   : null;
 // Evitar perdida silenciosa de datos usando almacenamiento efimero en Render.
