@@ -1,0 +1,20 @@
+name: Verificar sitio NUSEFA
+on:
+  push:
+    branches: [fix/nusefa-registros-seguros]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verificacion-publica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verificar que el servidor y PostgreSQL responden
+        run: |
+          curl --fail --silent --show-error --max-time 20 --retry 5 --retry-delay 8 --retry-all-errors https://control-acceso-nusefa.onrender.com/api/health | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data.get("ok") is True, "API no saludable"; print("APTO: /api/health y lectura de base de datos")'
+      - name: Verificar portada y sesion sin autenticar
+        run: |
+          curl --fail --silent --show-error -L --max-time 30 -o /tmp/nusefa-index.html https://control-acceso-nusefa.onrender.com/
+          grep -qi '<html' /tmp/nusefa-index.html
+          curl --fail --silent --show-error --max-time 30 https://control-acceso-nusefa.onrender.com/api/session | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("authenticated") is False; print("APTO: portada y sesion web")'

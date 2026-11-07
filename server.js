@@ -15,9 +15,13 @@ const sessions = new Set();
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+      ssl: ["localhost", "127.0.0.1"].includes(new URL(process.env.DATABASE_URL).hostname) ? false : { rejectUnauthorized: false },
     })
   : null;
+// Evitar perdida silenciosa de datos usando almacenamiento efimero en Render.
+if ((process.env.RENDER || process.env.RENDER_SERVICE_ID) && !process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL obligatorio en Render: no se guardaran registros en /tmp");
+}
 let databaseReady = false;
 let databaseMutationQueue = Promise.resolve();
 
@@ -123,6 +127,32 @@ async function writeDatabase(database) {
 }
 
 async function mutateDatabase(mutator) {
+  if (pool) {
+    // Un bloqueo de fila en PostgreSQL protege incluso entre instancias Node.
+    // La mutacion y escritura forman una sola transaccion.
+    await ensureDatabase();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const locked = await client.query("SELECT data FROM app_state WHERE id = 'main' FOR UPDATE");
+      if (locked.rowCount !== 1) throw new Error("No se encontro el estado principal");
+      const database = migrateDatabase(locked.rows[0].data);
+      const result = await mutator(database);
+      await client.query(
+        "UPDATE app_state SET data = $1::jsonb, updated_at = NOW() WHERE id = 'main'",
+        [JSON.stringify(database)]
+      );
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (rollbackError) { console.error(rollbackError); }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // El modo local mantiene una cola de escritura y reemplazo atomico.
   const operation = databaseMutationQueue.then(async () => {
     const database = await readDatabase();
     const result = await mutator(database);
@@ -234,10 +264,30 @@ function assignedSchedules(database, person) {
   });
 }
 
+// Las fechas de acceso deben calcularse en el huso horario de Colombia.
+const ATTENDANCE_TIME_ZONE = "America/Bogota";
+const attendanceClock = new Intl.DateTimeFormat("en-US", {
+  timeZone: ATTENDANCE_TIME_ZONE,
+  year: "numeric", month: "2-digit", day: "2-digit",
+  weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+function attendanceParts(date) {
+  const parts = Object.fromEntries(attendanceClock.formatToParts(date)
+    .filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  const weekdayNumber = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    key: `${parts.year}-${parts.month}-${parts.day}`,
+    weekday: weekdayNumber[parts.weekday],
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  };
+}
+
 function isInsideSchedule(schedule, date) {
-  const day = String(date.getDay());
+  const local = attendanceParts(date);
+  const day = String(local.weekday);
   if (!schedule.days.includes(day)) return false;
-  const minutes = date.getHours() * 60 + date.getMinutes();
+  const minutes = local.hour * 60 + local.minute;
   const [startHour, startMinute] = schedule.startTime.split(":").map(Number);
   const [endHour, endMinute] = schedule.endTime.split(":").map(Number);
   return minutes >= startHour * 60 + startMinute && minutes <= endHour * 60 + endMinute;
@@ -261,9 +311,9 @@ function dashboard(database) {
   for (let index = 6; index >= 0; index--) {
     const date = new Date(today);
     date.setDate(today.getDate() - index);
-    const key = date.toISOString().slice(0, 10);
-    const label = date.toLocaleDateString("es-CO", { weekday: "short", day: "2-digit" });
-    const events = database.events.filter((event) => event.createdAt.slice(0, 10) === key && event.allowed);
+    const key = attendanceParts(date).key;
+    const label = date.toLocaleDateString("es-CO", { timeZone: ATTENDANCE_TIME_ZONE, weekday: "short", day: "2-digit" });
+    const events = database.events.filter((event) => attendanceParts(new Date(event.createdAt)).key === key && event.allowed);
     days.push({
       label,
       ingreso: events.filter((event) => event.movement === "ingreso").length,
@@ -271,11 +321,12 @@ function dashboard(database) {
     });
   }
 
-  const todayKey = today.toISOString().slice(0, 10);
+  const todayKey = attendanceParts(today).key;
   const hours = Array.from({ length: 24 }, (_, hour) => {
     const events = database.events.filter((event) => {
       const date = new Date(event.createdAt);
-      return event.createdAt.slice(0, 10) === todayKey && date.getHours() === hour && event.allowed;
+      const local = attendanceParts(date);
+      return local.key === todayKey && local.hour === hour && event.allowed;
     });
     return {
       label: `${String(hour).padStart(2, "0")}:00`,
@@ -287,7 +338,7 @@ function dashboard(database) {
     totals: {
       personnel: database.personnel.length,
       activeCards: database.cards.filter((card) => card.active).length,
-      today: database.events.filter((event) => event.createdAt.slice(0, 10) === todayKey && event.allowed).length,
+      today: database.events.filter((event) => attendanceParts(new Date(event.createdAt)).key === todayKey && event.allowed).length,
       denied: database.events.filter((event) => !event.allowed).length,
     },
     days,
@@ -334,7 +385,31 @@ async function handleApi(request, response, url) {
       sendJson(response, 400, { error: "UID requerido" });
       return;
     }
+    // Compatibilidad con lectores existentes sin requestId.
+    const requestId = String(body.requestId || "").trim().slice(0, 96);
+    const device = String(body.device || "ESP32").slice(0, 100);
     const event = await mutateDatabase(async (currentDatabase) => {
+      // Todos los reintentos de una misma lectura entregan la misma respuesta.
+      if (requestId) {
+        const existing = currentDatabase.events.find((entry) =>
+          entry.requestId === requestId && entry.device === device
+        );
+        if (existing) {
+          if (existing.uid !== uid) {
+            const error = new Error("requestId reutilizado para otra tarjeta");
+            error.statusCode = 409;
+            throw error;
+          }
+          return existing;
+        }
+      }
+      // Evitar marcaciones accidentales dobles en el mismo lector durante 4 s.
+      const recent = currentDatabase.events.find((entry) =>
+        entry.uid === uid && entry.device === device &&
+        Date.now() - new Date(entry.createdAt).getTime() >= 0 &&
+        Date.now() - new Date(entry.createdAt).getTime() < 4000
+      );
+      if (recent && (!body.movement || body.movement === recent.movement)) return recent;
       const card = findCardByUid(currentDatabase, uid);
       const person = card ? currentDatabase.personnel.find((item) => item.id === card.personnelId) : null;
       const now = new Date();
@@ -347,11 +422,12 @@ async function handleApi(request, response, url) {
         name: person?.name || "Tarjeta desconocida",
         movement: allowed ? nextMovement(currentDatabase, person.id, body.movement) : "denegado",
         allowed,
-        device: String(body.device || "ESP32"),
+        device,
+        requestId,
         createdAt: now.toISOString(),
       };
       currentDatabase.events.unshift(accessEvent);
-      currentDatabase.events = currentDatabase.events.slice(0, 2000);
+      // Conservar el historial completo (no truncar los eventos automaticamente).
       return accessEvent;
     });
     sendJson(response, 200, {
@@ -365,6 +441,19 @@ async function handleApi(request, response, url) {
   }
 
   if (!requireAuthenticated(request, response)) return;
+
+  // Diagnostico administrativo del almacenamiento (sin mostrar credenciales).
+  if (request.method === "GET" && url.pathname === "/api/storage-status") {
+    sendJson(response, 200, {
+      storage: pool ? "postgresql" : "archivo-local",
+      persistent: Boolean(pool),
+      personnel: database.personnel.length,
+      cards: database.cards.length,
+      events: database.events.length,
+      lastEventAt: database.events[0]?.createdAt || null,
+    });
+    return;
+  }
 
   if (request.method === "GET" && url.pathname === "/api/dashboard") {
     sendJson(response, 200, dashboard(database));
