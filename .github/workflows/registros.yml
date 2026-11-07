@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [fix/nusefa-registros-seguros]
+    branches: [main, fix/nusefa-registros-seguros]
 permissions:
   contents: read
 jobs:
