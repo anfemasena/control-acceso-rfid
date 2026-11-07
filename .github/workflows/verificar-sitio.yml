@@ -1,0 +1,15 @@
+name: Verificar sitio NUSEFA
+on:
+  push:
+    branches: [fix/nusefa-registros-seguros]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verificacion-publica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verificar que el servidor y PostgreSQL responden
+        run: |
+          curl --fail --silent --show-error --max-time 20 --retry 5 --retry-delay 8 --retry-all-errors https://control-acceso-nusefa.onrender.com/api/health | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data.get("ok") is True, "API no saludable"; print("APTO: /api/health y lectura de base de datos")'
