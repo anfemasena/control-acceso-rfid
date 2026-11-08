@@ -1,0 +1,23 @@
+# Yarumo Acceso - infraestructura separada de control-acceso-nusefa.
+# La base yarumo-acceso-db ya existe en el workspace, fuera de este Blueprint.
+# NO incluir, adoptar, ni alterar el servicio principal NUSEFA.
+services:
+  - type: web
+    name: yarumo-acceso
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: yarumo-acceso
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: YARUMO_DATABASE_URL
+        fromDatabase:
+          name: yarumo-acceso-db
+          property: connectionString
+      - key: YARUMO_REGISTRATION_CODE
+        generateValue: true
