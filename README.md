@@ -1,138 +1,56 @@
-# Control de acceso ESP32 + RC522
+# Control de acceso NUSEFA V2 — entorno independiente de pruebas
 
-Sistema local para registrar tarjetas RFID, autorizar accesos, administrar
-funcionarios, definir horarios y consultar graficos de movimientos desde una
-pagina web.
+> **IMPORTANTE:** esta rama es un laboratorio de desarrollo. No es la plataforma activa de Nuestra Señora de Fátima. No se debe conectar a la base de datos, servicios ni lectores de la versión actual. No desplegar como producción sin pruebas y revisión de seguridad.
 
-## Componentes
+## Separación respecto a la aplicación actual
 
-- ESP32
-- Lector RFID RC522
-- Pantalla LCD 20x4 con modulo I2C
-- Tarjetas o llaveros MIFARE de 13.56 MHz
-- Rele de 3.3 V compatible o modulo con entrada logica compatible
-- Fuente adecuada para la cerradura (no alimentar la cerradura desde el ESP32)
+- **Versión actual:** rama [main](https://github.com/anfemasena/control-acceso-rfid/tree/main). Permanece sin cambios.
+- **Versión V2:** rama `feature/nusefa-v2-aislada`, creada desde `main`.
+- **Archivo de datos local:** `data-v2/database.json` (nunca `data/database.json`).
+- **PostgreSQL:** solo toma la conexión desde `V2_DATABASE_URL`; ignora `DATABASE_URL` usada por la versión anterior. La tabla de esta rama se llama `nusefa_v2_state`, con clave `nusefa-v2`.
+- **Credenciales de administrador:** `V2_ADMIN_PASSWORD` obligatoria y `V2_ADMIN_USER` opcional.
+- **Puerto local:** 3100, salvo que se establezca `PORT`.
+- **Firmware:** apunta por defecto a `nusefa-v2.invalid`, que intencionalmente NO funciona. Configurar su URL V2 solamente después de crear el servicio de pruebas.
+- **Pantalla web:** muestra "V2 - PRUEBAS" para evitar confundirla con el servicio actual.
 
-## Conexion RC522 al ESP32
+La separación por rama no sustituye el aislamiento del despliegue. Un despliegue independiente debe contar con **otro servicio Render y otra base de datos PostgreSQL**, con nuevas claves. No copiar ni reutilizar las variables secretas del entorno actual.
 
-| RC522 | ESP32 |
-|---|---|
-| 3.3V | 3V3 |
-| GND | GND |
-| SDA/SS | GPIO 5 |
-| SCK | GPIO 18 |
-| MOSI | GPIO 23 |
-| MISO | GPIO 19 |
-| RST | GPIO 4 |
+## Ejecutar localmente (PowerShell)
 
-El rele se conecta al GPIO 27. El RC522 debe alimentarse solamente con 3.3 V.
-
-## Conexion LCD 20x4 I2C al ESP32
-
-| LCD I2C | ESP32 |
-|---|---|
-| VCC | 5V |
-| GND | GND |
-| SDA | GPIO 21 |
-| SCL | GPIO 22 |
-
-La direccion I2C comun es `0x27`. Si la pantalla no muestra texto, pruebe
-`0x3F` en `LCD_ADDRESS` dentro del firmware. Ajuste tambien el potenciometro
-azul del modulo I2C para regular el contraste.
-
-## Ejecutar el servidor
-
-Se requiere Node.js 18 o posterior.
+Instalar Node.js 18 o superior y ejecutar desde la carpeta del repositorio:
 
 ```powershell
-node server.js
+npm install
+$env:V2_ADMIN_USER = "admin-v2"
+$env:V2_ADMIN_PASSWORD = "COLOQUE_AQUI_UNA_CLAVE_NUEVA_Y_LARGA"
+npm test
+npm start
 ```
 
-Abrir `http://localhost:3000`. Desde otro equipo de la misma red se debe usar
-la IP del computador, por ejemplo `http://192.168.1.50:3000`.
+La interfaz local estará disponible en `http://localhost:3100`. Si ya funciona una instancia en ese puerto, configurar `$env:PORT = "3101"`. No definir `DATABASE_URL`; para pruebas locales se crea automáticamente una carpeta `data-v2`, excluida de Git.
 
-El archivo `data/database.json` se crea automaticamente.
+## Despliegue futuro en Render (todavía NO realizado)
 
-## Acceso al panel
+1. Crear una base PostgreSQL **nueva**, vacía e independiente. Nunca usar la de producción.
+2. Crear otro Web Service vinculado a esta rama, **sin reutilizar ni modificar el servicio vigente**.
+3. Configurar `V2_DATABASE_URL` con la URL de la **nueva base**, `V2_ADMIN_PASSWORD` con una clave exclusiva y, si se desea, `V2_ADMIN_USER`.
+4. Configurar `npm install` como compilación y `npm start` como arranque; `/api/health` como comprobación de salud.
+5. Hacer pruebas con tarjetas ficticias y un ESP32 distinto, sin intervenir el lector activo.
+6. Actualizar `SERVER_URL` dentro de `firmware/control_acceso/control_acceso.ino` para que apunte exclusivamente al nuevo servicio.
 
-El usuario y la contrasena inicial del panel son:
+El proceso se negará a iniciar en Render cuando falte `V2_DATABASE_URL`, y también se negará a iniciar sin `V2_ADMIN_PASSWORD`.
 
-```text
-Usuario: admin
-Contrasena: Fatima2026*
-```
+## Seguridad antes de cualquier operación real
 
-Para cambiarlos al iniciar el servidor:
+Esta rama sigue siendo un punto de partida. Pendientes antes de utilizarla en un acceso físico real:
 
-```powershell
-$env:ADMIN_USER="colegio"; $env:ADMIN_PASSWORD="NuevaClaveSegura"; node server.js
-```
+- Autenticar cada dispositivo ESP32 con credenciales individuales y revocables. La API `/api/access` del código heredado todavía acepta solicitudes sin autenticación de dispositivo.
+- Reemplazar `secureClient.setInsecure()` por validación TLS real en el firmware.
+- Revisar reglas de autorización, sesiones de administradores, auditoría y concurrencia.
+- Validar continuidad operativa cuando falle la red y confirmar que la cerradura se comporta de forma segura.
 
-El ESP32 no usa esta contrasena. Solo protege la pagina, los funcionarios, las
-tarjetas, los horarios y el historial.
+## Referencia de hardware y API
 
-## Identidad institucional
+Para conexiones de ESP32, RC522, LCD 20×4 I2C y relé, consultar el [README de la versión original](https://github.com/anfemasena/control-acceso-rfid/blob/main/README.md). **No reutilizar los parámetros de servidor ni credenciales indicados allí.**
 
-El panel usa como referencia publica el nombre Colegio Nuestra Senora de Fatima
-Pereira, el lema Ciencia y Virtud y la frase institucional de formacion
-publicada por la Policia Nacional de Colombia.
-
-## Preparar el ESP32
-
-1. Instalar en Arduino IDE el soporte para placas ESP32.
-2. Instalar las librerias `MFRC522`, `ArduinoJson` y `LiquidCrystal_I2C`.
-3. Abrir `firmware/control_acceso/control_acceso.ino`.
-4. Cambiar `WIFI_SSID`, `WIFI_PASSWORD` y `SERVER_URL`.
-5. Seleccionar la placa ESP32 y cargar el programa.
-
-`SERVER_URL` debe usar la IP del computador que ejecuta el servidor, no
-`localhost`.
-
-## Uso del panel
-
-Despues de iniciar sesion, la primera pantalla es **Inicio**, donde se muestran:
-
-- Total de funcionarios, tarjetas activas, movimientos del dia y accesos denegados.
-- Grafico de ingresos y salidas por dia.
-- Grafico de movimientos por hora.
-- Ultimos movimientos registrados.
-
-Pestanas disponibles:
-
-- **Usuarios**: datos personales, cargo, grupo, contacto y fotografia.
-- **Horarios**: franjas de trabajo individuales o por grupo.
-- **Tarjetas**: asociar o eliminar tarjetas RFID de funcionarios.
-
-## Uso con el lector
-
-1. Acerque una tarjeta al lector.
-2. La lectura aparecera en el historial, inicialmente como denegada.
-3. Copie el UID mostrado y registre el funcionario en Usuarios.
-4. Asocie el UID al funcionario desde Tarjetas.
-5. En la siguiente lectura, el servidor autorizara la tarjeta y el ESP32
-   activara el rele.
-
-La pantalla LCD 2004 I2C mostrara:
-
-- Estado de WiFi e IP del ESP32.
-- UID leido por el RC522.
-- Nombre retornado por la plataforma.
-- Resultado de acceso.
-- Movimiento del usuario: **ENTRA** cuando la API responde `ingreso` y
-  **SALE** cuando responde `salida`.
-
-## API
-
-- `POST /api/access`: valida un UID y registra el evento.
-- `GET /api/dashboard`: metricas y graficos.
-- `GET /api/personnel`: lista funcionarios.
-- `POST /api/personnel`: registra funcionario.
-- `PUT /api/personnel/:id`: actualiza funcionario.
-- `DELETE /api/personnel/:id`: elimina funcionario.
-- `GET /api/cards`: lista tarjetas.
-- `POST /api/cards`: asocia tarjeta.
-- `DELETE /api/cards/:id`: elimina tarjeta.
-- `GET /api/schedules`: lista horarios.
-- `POST /api/schedules`: registra horario.
-- `DELETE /api/schedules/:id`: elimina horario.
-- `GET /api/events`: lista los ultimos eventos.
+El firmware V2 sigue siendo una variante inicial para laboratorio. No reprogramar el ESP32 instalado actualmente.
