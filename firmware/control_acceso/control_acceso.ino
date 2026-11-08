@@ -20,8 +20,9 @@ constexpr uint32_t RETRY_DELAY_MS = 2500;
 
 const char* WIFI_SSID = "NOMBRE_WIFI";
 const char* WIFI_PASSWORD = "CLAVE_WIFI";
-const char* SERVER_URL = "https://control-acceso-nusefa.onrender.com/api/access";
-const char* DEVICE_NAME = "Puerta principal";
+// URL intencionalmente no operativa. Configurar la instancia V2, nunca la produccion.
+const char* SERVER_URL = "https://nusefa-v2.invalid/api/access";
+const char* DEVICE_NAME = "Puerta principal V2 - pruebas";
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(LCD_ADDRESS, 20, 4);
