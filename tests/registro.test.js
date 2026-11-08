@@ -10,20 +10,20 @@ const serverCode = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf
 const firmwareCode = fs.readFileSync(
   path.join(__dirname, "..", "firmware", "control_acceso", "control_acceso.ino"), "utf8"
 );
-assert.match(serverCode, /SELECT data FROM app_state WHERE id = 'main' FOR UPDATE/);
+assert.match(serverCode, /SELECT data FROM nusefa_v2_state WHERE id = 'nusefa-v2' FOR UPDATE/);
 assert.match(serverCode, /attendanceParts\(new Date\(event.createdAt\)\)/);
 assert.doesNotMatch(serverCode, /currentDatabase\.events\s*=\s*currentDatabase\.events\.slice\(0,\s*2000\)/);
 assert.match(firmwareCode, /request\["requestId"\]/);
 
-// El servidor desplegado en Render no debe arrancar sin DATABASE_URL.
+// El servidor V2 en Render no debe arrancar sin V2_DATABASE_URL.
 {
-  const env = { RENDER_SERVICE_ID: "srv-prueba", DATA_DIR: os.tmpdir() };
+  const env = { RENDER_SERVICE_ID: "srv-prueba", V2_DATA_DIR: os.tmpdir() };
   const fake = vm.createContext({
     require(n) { if (n === "pg") return { Pool: class {} }; return require(n); },
     process: { env },
     console, URL, Date, Intl, Buffer, __dirname: path.resolve(__dirname, ".."),
   });
-  assert.throws(() => vm.runInContext(serverCode, fake), /DATABASE_URL obligatorio/);
+  assert.throws(() => vm.runInContext(serverCode, fake), /V2_DATABASE_URL obligatorio/);
 }
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "nusefa-test-"));
@@ -35,7 +35,7 @@ const runtime = vm.createContext({
     if (n === "pg") return { Pool: class { constructor() { throw Error("PostgreSQL no debe usarse en esta prueba"); } } };
     return require(n);
   },
-  process: { env: { DATA_DIR: directory, ADMIN_USER: "admin", ADMIN_PASSWORD: "clave-de-prueba", PORT: "39998" } },
+  process: { env: { V2_DATA_DIR: directory, V2_ADMIN_USER: "admin", V2_ADMIN_PASSWORD: "clave-de-prueba", PORT: "39998" } },
   console, URL, Date, Intl, Buffer, __dirname: path.resolve(__dirname, ".."), String, Number, Boolean, Object, Array, Set,
 });
 vm.runInContext(serverCode, runtime, { filename: "server.js" });
