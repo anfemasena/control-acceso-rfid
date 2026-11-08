@@ -80,7 +80,13 @@ int request(const String &path,const String &method,const String &payload,String
  const int code=method=="GET"?http.GET():http.POST(payload);
  response=http.getString();http.end();return code;
 }
+void recoverQueue(){
+ // Tras un corte entre remove() y rename(), rescata los eventos confirmados restantes.
+ if(!LittleFS.exists(QUEUE_PATH) && LittleFS.exists(TEMP_PATH))LittleFS.rename(TEMP_PATH,QUEUE_PATH);
+ else if(LittleFS.exists(QUEUE_PATH) && LittleFS.exists(TEMP_PATH))LittleFS.remove(TEMP_PATH);
+}
 bool enqueue(uint16_t slot,uint16_t confidence){
+ recoverQueue();
  if(!LittleFS.exists(QUEUE_PATH)){
    File file=LittleFS.open(QUEUE_PATH,"w");if(!file)return false;file.close();
  }
@@ -91,6 +97,7 @@ bool enqueue(uint16_t slot,uint16_t confidence){
  String line;serializeJson(d,line);f.println(line);f.flush();f.close();return true;
 }
 void syncEvents(){
+ recoverQueue();
  if(!LittleFS.exists(QUEUE_PATH)||WiFi.status()!=WL_CONNECTED)return;
  File input=LittleFS.open(QUEUE_PATH,"r");if(!input)return;
  if(!input.available()){input.close();return;}
@@ -170,6 +177,7 @@ void setup(){
  Serial.begin(115200);pinMode(LCD_BL,OUTPUT);digitalWrite(LCD_BL,HIGH);
  gfx->begin();screen("Iniciando","Yarumo Acceso / laboratorio");
  if(!LittleFS.begin(true)){screen("ERROR FLASH","No se puede guardar eventos",RGB565_RED);while(true)delay(1000);}
+ recoverQueue();
  FingerSerial.begin(SENSOR_BAUD,SERIAL_8N1,AS608_ESP_RX,AS608_ESP_TX);finger.begin(SENSOR_BAUD);
  sensorReady=finger.verifyPassword();
  if(!sensorReady)screen("ERROR AS608","Revise UART y alimentacion",RGB565_RED);
