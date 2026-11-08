@@ -4,23 +4,26 @@ const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3100);
 const HOST = process.env.HOST || "0.0.0.0";
-const ADMIN_USER = process.env.ADMIN_USER || "admin";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Fatima2026*";
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+const ADMIN_USER = process.env.V2_ADMIN_USER || "admin";
+const ADMIN_PASSWORD = process.env.V2_ADMIN_PASSWORD || "";
+const DATA_DIR = process.env.V2_DATA_DIR || path.join(__dirname, "data-v2");
 const DB_FILE = path.join(DATA_DIR, "database.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const sessions = new Set();
-const pool = process.env.DATABASE_URL
+const pool = process.env.V2_DATABASE_URL
   ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: ["localhost", "127.0.0.1"].includes(new URL(process.env.DATABASE_URL).hostname) ? false : { rejectUnauthorized: false },
+      connectionString: process.env.V2_DATABASE_URL,
+      ssl: ["localhost", "127.0.0.1"].includes(new URL(process.env.V2_DATABASE_URL).hostname) ? false : { rejectUnauthorized: false },
     })
   : null;
 // Evitar perdida silenciosa de datos usando almacenamiento efimero en Render.
-if ((process.env.RENDER || process.env.RENDER_SERVICE_ID) && !process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL obligatorio en Render: no se guardaran registros en /tmp");
+if ((process.env.RENDER || process.env.RENDER_SERVICE_ID) && !process.env.V2_DATABASE_URL) {
+  throw new Error("V2_DATABASE_URL obligatorio en Render: no se permite usar el almacenamiento de produccion");
+}
+if (!ADMIN_PASSWORD) {
+  throw new Error("V2_ADMIN_PASSWORD obligatorio: configure una clave exclusiva para NUSEFA V2");
 }
 let databaseReady = false;
 let databaseMutationQueue = Promise.resolve();
@@ -77,15 +80,15 @@ function migrateDatabase(database) {
 async function ensureDatabase() {
   if (!pool || databaseReady) return;
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS app_state (
+    CREATE TABLE IF NOT EXISTS nusefa_v2_state (
       id TEXT PRIMARY KEY,
       data JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await pool.query(
-    `INSERT INTO app_state (id, data)
-     VALUES ('main', $1::jsonb)
+    `INSERT INTO nusefa_v2_state (id, data)
+     VALUES ('nusefa-v2', $1::jsonb)
      ON CONFLICT (id) DO NOTHING`,
     [JSON.stringify(emptyDatabase())]
   );
@@ -95,7 +98,7 @@ async function ensureDatabase() {
 async function readDatabase() {
   if (pool) {
     await ensureDatabase();
-    const result = await pool.query("SELECT data FROM app_state WHERE id = 'main'");
+    const result = await pool.query("SELECT data FROM nusefa_v2_state WHERE id = 'nusefa-v2'");
     return migrateDatabase(result.rows[0]?.data || emptyDatabase());
   }
 
@@ -111,8 +114,8 @@ async function writeDatabase(database) {
   if (pool) {
     await ensureDatabase();
     await pool.query(
-      `INSERT INTO app_state (id, data, updated_at)
-       VALUES ('main', $1::jsonb, NOW())
+      `INSERT INTO nusefa_v2_state (id, data, updated_at)
+       VALUES ('nusefa-v2', $1::jsonb, NOW())
        ON CONFLICT (id)
        DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
       [JSON.stringify(database)]
@@ -134,12 +137,12 @@ async function mutateDatabase(mutator) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const locked = await client.query("SELECT data FROM app_state WHERE id = 'main' FOR UPDATE");
+      const locked = await client.query("SELECT data FROM nusefa_v2_state WHERE id = 'nusefa-v2' FOR UPDATE");
       if (locked.rowCount !== 1) throw new Error("No se encontro el estado principal");
       const database = migrateDatabase(locked.rows[0].data);
       const result = await mutator(database);
       await client.query(
-        "UPDATE app_state SET data = $1::jsonb, updated_at = NOW() WHERE id = 'main'",
+        "UPDATE nusefa_v2_state SET data = $1::jsonb, updated_at = NOW() WHERE id = 'nusefa-v2'",
         [JSON.stringify(database)]
       );
       await client.query("COMMIT");
@@ -355,7 +358,7 @@ async function handleApi(request, response, url) {
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/health") {
-    sendJson(response, 200, { ok: true, service: "control-acceso-rfid" });
+    sendJson(response, 200, { ok: true, service: "control-acceso-nusefa-v2", environment: "pruebas" });
     return;
   }
   if (request.method === "POST" && url.pathname === "/api/login") {
@@ -622,5 +625,5 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Control de acceso disponible en http://localhost:${PORT}`);
+  console.log(`Control de acceso NUSEFA V2 (pruebas) en http://localhost:${PORT}`);
 });
