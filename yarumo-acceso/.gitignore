@@ -1,0 +1,4 @@
+.env
+node_modules/
+*.log
+firmware/yarumo_lector_s3/config.h
