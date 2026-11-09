@@ -16,3 +16,9 @@ const char *ROOT_CA_PEM = R"PEM(
 REEMPLAZAR_POR_CERTIFICADO_CA_VERIFICADO
 -----END CERTIFICATE-----
 )PEM";
+
+// SOLO primer montaje en memoria nueva sin LittleFS: cambiar a 1,
+// cargar firmware una vez, luego volver a 0 y cargar de nuevo.
+// No utilizar 1 con registros reales, porque un fallo de montaje
+// podria reformatear y eliminar eventos pendientes.
+#define YARUMO_ALLOW_INITIAL_FS_FORMAT 0
