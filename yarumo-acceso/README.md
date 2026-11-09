@@ -95,7 +95,7 @@ La pantalla usa GPIO21/38/39/40/45/46 y el táctil GPIO41/42/47/48, por eso se h
 
 La pantalla trabaja en **horizontal 320 × 172 píxeles**, rotación `1` de Arduino_GFX. El archivo `firmware/yarumo_lector_s3/yarumo_ui.h` implementa:
 
-1. **Bienvenida:** isotipo de hojas vectorial en verde y naranja junto al nombre **YARUMO ACCESO** durante el inicio. Es un gráfico provisional dibujado en el firmware, **no una copia exacta del archivo oficial de Yarumo POS**; se puede sustituir por el icono y wordmark originales al contar con esos archivos.
+1. **Bienvenida:** isotipo original de **Yarumo POS** (hojas blancas y naranjas sobre verde oscuro) adaptado a una imagen RGB565 de 64×64 comprimida con RLE, junto al nombre **YARUMO ACCESO**. El original se tomó de la rama `feature/yarumo-installer-consolidacion-v1` del repositorio `anfemasena/software-contable-pos`. El texto del wordmark se compone con la fuente integrada del LCD para conservar legibilidad.
 2. **Sin red:** aparece **SIN CONEXIÓN WIFI** con el botón táctil **CONFIGURAR WIFI**.
 3. **Configuración de red:** al pulsar, el equipo crea temporalmente una red WPA2 `Yarumo-XXXX`, con una contraseña aleatoria mostrada en pantalla. Desde un teléfono conectado a esa red, abrir **http://192.168.4.1** en el navegador. Introducir nombre de red de **2,4 GHz** y contraseña. Se guardan en la memoria NVS del ESP32, no en Render, y se restablecen tras reiniciar. El AP se apaga al iniciar la conexión.
 4. **Reposo con red:** muestra el reloj grande **HH:MM:SS** y **ACERQUE SU HUELLA**. La hora se sincroniza por NTP con **America/Bogota (UTC−5)**; la pantalla marca `--:--` hasta obtener la primera hora válida. Un reloj DS3231 permitiría conservar la hora tras reinicios sin Internet, pero aún no está integrado.
