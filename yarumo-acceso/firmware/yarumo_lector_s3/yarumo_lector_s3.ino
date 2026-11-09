@@ -78,6 +78,8 @@ void recoverQueue(){
  else if(LittleFS.exists(QUEUE_PATH) && LittleFS.exists(TEMP_PATH))LittleFS.remove(TEMP_PATH);
 }
 bool enqueue(uint16_t slot,uint16_t confidence){
+ // No registrar una hora inventada: debe existir hora NTP o RTC valida.
+ if(!clockReady()){screen("RELOJ SIN HORA","Conecte Wi-Fi o DS3231",RGB565_RED);return false;}
  recoverQueue();
  if(!LittleFS.exists(QUEUE_PATH)){
    File file=LittleFS.open(QUEUE_PATH,"w");if(!file)return false;file.close();
@@ -85,7 +87,7 @@ bool enqueue(uint16_t slot,uint16_t confidence){
  File f=LittleFS.open(QUEUE_PATH,"a");if(!f)return false;
  if(f.size()>MAX_OFFLINE_FILE){f.close();screen("Cola llena","Requiere recuperar la conexion",RGB565_RED);return false;}
  JsonDocument d;d["eventId"]=newUUID();d["slot"]=slot;d["confidence"]=confidence;
- const String when=utcNow();if(when.length())d["occurredAt"]=when;
+ d["occurredAt"]=utcNow();
  String line;serializeJson(d,line);f.println(line);f.flush();f.close();return true;
 }
 void syncEvents(){
@@ -157,7 +159,7 @@ void handleFinger(){
    const uint16_t slot=finger.fingerID;
    if(slot<=MAX_SLOT){
      if(enqueue(slot,finger.confidence))screen("HUELLA VALIDADA","Casilla "+String(slot)+" · Registrando",RGB565_GREEN);
-     else screen("ERROR DE COLA","Sin espacio local",RGB565_RED);
+     else screen("REGISTRO PENDIENTE","Revise reloj o memoria",RGB565_RED);
    }
  }else if(match==FINGERPRINT_NOTFOUND){
    // Casilla 0 registra intento no reconocido, sin datos biométricos.
@@ -170,9 +172,17 @@ void setup(){
  pinMode(LCD_BL,OUTPUT);digitalWrite(LCD_BL,HIGH);
  gfx->begin(); // Rotacion 1 -> orientacion horizontal 320 x 172.
  YarumoUI::begin(gfx,false); // Muestra la bienvenida incluso sin Wi-Fi.
- if(!LittleFS.begin(true)){
+ // No borrar registros automaticamente ante una particion corrupta.
+ bool fsReady=LittleFS.begin(false);
+#if YARUMO_ALLOW_INITIAL_FS_FORMAT
+ if(!fsReady){
+   Serial.println("FORMATEO INICIAL EXPLICITO DEL SISTEMA DE ARCHIVOS");
+   fsReady=LittleFS.format() && LittleFS.begin(false);
+ }
+#endif
+ if(!fsReady){
    screen("ERROR FLASH","No se pueden guardar eventos",RGB565_RED);
-   while(true)delay(1000);
+   while(true){YarumoUI::tick();delay(100);}
  }
  recoverQueue();
  FingerSerial.begin(SENSOR_BAUD,SERIAL_8N1,AS608_ESP_RX,AS608_ESP_TX);
