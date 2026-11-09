@@ -91,7 +91,22 @@ La pantalla usa GPIO21/38/39/40/45/46 y el táctil GPIO41/42/47/48, por eso se h
 5. Compilar, validar el funcionamiento de la pantalla y las dos señales UART y cargar a un dispositivo de pruebas, nunca al lector existente.
 6. En la plataforma crear una persona y un comando de enrolamiento asociando lector + casilla 1–10. El dispositivo consultará el comando, pedirá dos capturas y almacenará la plantilla únicamente en el AS608.
 
-La pantalla muestra estados, pero la interfaz táctil para configurar redes Wi-Fi **todavía no se implementó**. Se requiere verificar el driver/tamaño real del LCD sobre la placa antes de dar por terminada la etapa de firmware.
+### Pantalla del lector (firmware de laboratorio actualizado)
+
+La pantalla trabaja en **horizontal 320 × 172 píxeles**, rotación `1` de Arduino_GFX. El archivo `firmware/yarumo_lector_s3/yarumo_ui.h` implementa:
+
+1. **Bienvenida:** isotipo de hojas vectorial en verde y naranja junto al nombre **YARUMO ACCESO** durante el inicio. Es un gráfico provisional dibujado en el firmware, **no una copia exacta del archivo oficial de Yarumo POS**; se puede sustituir por el icono y wordmark originales al contar con esos archivos.
+2. **Sin red:** aparece **SIN CONEXIÓN WIFI** con el botón táctil **CONFIGURAR WIFI**.
+3. **Configuración de red:** al pulsar, el equipo crea temporalmente una red WPA2 `Yarumo-XXXX`, con una contraseña aleatoria mostrada en pantalla. Desde un teléfono conectado a esa red, abrir **http://192.168.4.1** en el navegador. Introducir nombre de red de **2,4 GHz** y contraseña. Se guardan en la memoria NVS del ESP32, no en Render, y se restablecen tras reiniciar. El AP se apaga al iniciar la conexión.
+4. **Reposo con red:** muestra el reloj grande **HH:MM:SS** y **ACERQUE SU HUELLA**. La hora se sincroniza por NTP con **America/Bogota (UTC−5)**; la pantalla marca `--:--` hasta obtener la primera hora válida. Un reloj DS3231 permitiría conservar la hora tras reinicios sin Internet, pero aún no está integrado.
+5. **Configuración alternativa:** toque **RED** en la parte inferior derecha de la pantalla de reposo o mantenga el botón físico **BOOT** 1,2 segundos durante el funcionamiento normal. **No mantenga BOOT durante un reinicio**, porque es el pin de arranque del ESP32.
+6. **Volver a operar:** se reconecta al Wi-Fi guardado sin bloquear el bucle del lector y conserva las funciones de eventos pendientes y huellas AS608.
+
+Se utilizan los pines de pantalla y touch verificados para **Waveshare ESP32-S3-Touch-LCD-1.47**: LCD CS21, DC45, CLK38, MOSI39, RST40, BL46; AXS5106L SDA42, SCL41, RST47, INT48; AS608 UART RX1/TX2. El botón de configuración táctil requiere **validación de orientación y coordenadas con la placa física**. El portal es accesible solamente desde la red temporal protegida y se cierra por tiempo agotado tras 10 minutos.
+
+**Esta interfaz no sustituye la obligación de configurar `DEVICE_TOKEN` y el certificado CA de HTTPS en `config.h` para enviar registros a Yarumo.** El panel y el reloj pueden operar sin el token, pero la lectura biométrica para la plataforma no debe activarse hasta contar con autenticación y validación TLS.
+
+Se requiere instalar las bibliotecas Arduino_GFX y Adafruit Fingerprint, además de ArduinoJson. Las bibliotecas `WiFi`, `WebServer`, `Preferences` y `Wire` forman parte del paquete ESP32 Arduino. Todavía no se ha compilado ni probado el firmware con la placa física.
 
 ### Ejemplo de API de lector
 
@@ -107,10 +122,10 @@ La API responde `{id, allowed, movement, duplicate}`. `slot:0` indica huella no 
 
 ## Limitaciones pendientes antes de producción
 
-- No desplegado ni validado físicamente; compilación del firmware pendiente con la revisión Waveshare real.
+- Backend web publicado en un servicio independiente de Render. Firmware no flasheado ni validado físicamente; compilación y calibración del táctil pendientes con la revisión Waveshare real.
 - Hace falta auditoría de seguridad, monitoreo y tests integrados reales con PostgreSQL, ataques CSRF, roles y concurrencia entre lectores.
 - La puesta en marcha de un nuevo administrador que ya tenga una organización depende de una contraseña temporal creada por el titular: implementar invitaciones de un solo uso y cambio obligatorio de contraseña.
-- La aplicación no implementa todavía opción web de eliminación remota de huellas ni reintento del enrolamiento fallido. Tampoco existe una interfaz táctil completa para la configuración de redes inalámbricas.
+- La aplicación aún requiere mejorar el reintento de enrolamiento fallido, la seguridad y la experiencia completa de administración. El firmware añade configuración de Wi-Fi con pantalla táctil y portal desde el celular, pendiente de validación física.
 - Un lector con modo `alterno` calcula entrada/salida a partir del último evento recibido de la persona. Para operaciones estrictas es preferible configurar dispositivos exclusivos de ingreso/salida y evitar discrepancias de sincronización en red.
 - Recomendado añadir monitoreo de ocupación de cola, restauración tras interrupciones eléctricas y pruebas de límites del sistema de archivos.
 - Los datos biométricos se consideran sensibles en Colombia; antes de utilizar el sistema con personas reales, definir base jurídica, autorización cuando corresponda, política de tratamiento, retención y derechos de los titulares. No centralizar plantillas biométricas.
