@@ -106,7 +106,37 @@ Se utilizan los pines de pantalla y touch verificados para **Waveshare ESP32-S3-
 
 **Esta interfaz no sustituye la obligación de configurar `DEVICE_TOKEN` y el certificado CA de HTTPS en `config.h` para enviar registros a Yarumo.** El panel y el reloj pueden operar sin el token, pero la lectura biométrica para la plataforma no debe activarse hasta contar con autenticación y validación TLS.
 
-Se requiere instalar las bibliotecas Arduino_GFX y Adafruit Fingerprint, además de ArduinoJson. Las bibliotecas `WiFi`, `WebServer`, `Preferences` y `Wire` forman parte del paquete ESP32 Arduino. Todavía no se ha compilado ni probado el firmware con la placa física.
+Se requiere instalar las bibliotecas Arduino_GFX y Adafruit Fingerprint, además de ArduinoJson. Las bibliotecas `WiFi`, `WebServer`, `Preferences` y `Wire` forman parte del paquete ESP32 Arduino. Todavía no se ha confirmado una compilación Arduino completa ni probado el firmware con la placa física.
+
+### Reloj offline opcional: DS3231
+
+El archivo `firmware/yarumo_lector_s3/yarumo_rtc.h` admite un DS3231 conectado al **mismo bus I²C de la pantalla táctil**:
+
+| DS3231 | Waveshare ESP32-S3 |
+|---|---|
+| SDA | GPIO42 |
+| SCL | GPIO41 |
+| GND | GND común |
+| VCC | 3,3 V **solo si el módulo admite ese voltaje** |
+
+**Precaución:** algunos módulos RTC económicos contienen resistencias pull-up hacia VCC o un circuito de carga inadecuado para pilas CR2032 no recargables. Verificar el módulo real antes de conectarlo; jamás conectar señales I²C a 5 V directamente al ESP32-S3.
+
+Si el RTC ya conserva una hora válida, la pantalla puede recuperar **hora de Colombia (UTC−5)** tras un reinicio sin red. Cuando NTP confirma sincronización, el firmware actualiza el RTC. El bit OSF del DS3231 evita aceptar una hora que se haya perdido por fallo del oscilador. Si el módulo no está instalado, el firmware sigue funcionando con NTP y conserva la hora en memoria tras desconexiones breves, pero tras reiniciar completamente sin Internet mostrará **--:--:--** hasta sincronizar.
+
+### Primera inicialización de LittleFS (sin eliminar registros)
+
+Para evitar perder el historial pendiente, el firmware ya no formatea automáticamente la memoria cuando falla el montaje de LittleFS. **En una placa nueva, sin ningún registro pendiente**, realizar la inicialización una sola vez:
+
+1. Copiar `config.example.h` a `config.h`.
+2. Poner `#define YARUMO_ALLOW_INITIAL_FS_FORMAT 1` exclusivamente para el primer arranque.
+3. Cargar firmware y verificar que LittleFS monta correctamente.
+4. Volver inmediatamente a `#define YARUMO_ALLOW_INITIAL_FS_FORMAT 0` y cargar de nuevo.
+
+No activar el formato inicial para un equipo con registros reales. Si LittleFS falla después de estar en uso, recuperar los datos en lugar de borrar la partición. Asimismo, el firmware **no encola eventos si no tiene una hora válida** de NTP o DS3231; esto evita reportes con fechas falsas.
+
+### Comprobaciones automáticas de compilación
+
+Se añadió [`.github/workflows/yarumo-esp32.yml`](../../.github/workflows/yarumo-esp32.yml) para intentar compilar el sketch con el core Arduino ESP32 3.3.4 y las bibliotecas oficiales. Las pruebas Node [`tests/firmware-ui.test.js`](./tests/firmware-ui.test.js) validan contratos de orientación, logo, aprovisionamiento Wi-Fi, RTC y protección de registros. Ninguna prueba sustituye comprobar físicamente LCD, táctil, AS608 ni batería.
 
 ### Ejemplo de API de lector
 
