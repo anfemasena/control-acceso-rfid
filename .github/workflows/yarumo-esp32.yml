@@ -1,0 +1,52 @@
+name: Compilar Yarumo ESP32-S3
+
+on:
+  push:
+    branches:
+      - feature/nusefa-v2-aislada
+    paths:
+      - 'yarumo-acceso/firmware/**'
+      - '.github/workflows/yarumo-esp32.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    name: Arduino ESP32-S3 + AS608 + LCD/Touch
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Instalar nucleo ESP32 y bibliotecas
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://espressif.github.io/arduino-esp32/package_esp32_index.json'
+          arduino-cli core update-index --additional-urls "$URL"
+          arduino-cli core install esp32:esp32@3.3.4 --additional-urls "$URL"
+          arduino-cli lib install "ArduinoJson" "Adafruit Fingerprint Sensor Library" "GFX Library for Arduino"
+
+      - name: Crear configuracion de prueba sin secretos
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp yarumo-acceso/firmware/yarumo_lector_s3/config.example.h \
+             yarumo-acceso/firmware/yarumo_lector_s3/config.h
+
+      - name: Compilar firmware ESP32-S3
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://espressif.github.io/arduino-esp32/package_esp32_index.json'
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32s3 \
+            --additional-urls "$URL" \
+            --warnings all \
+            yarumo-acceso/firmware/yarumo_lector_s3
