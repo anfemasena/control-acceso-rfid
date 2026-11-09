@@ -256,6 +256,8 @@ La red temporal de configuracion se apaga al conectar.</small></p></body></html>
     WiFi.setAutoReconnect(true);
     connectStation();
   }
+  static void setSensorReady(bool ready) { sensorOK=ready; }
+  static bool portalActive() { return portalOn; }
   static void tick() {
     if(portalOn)portal.handleClient();
     if(applyCredentials){
