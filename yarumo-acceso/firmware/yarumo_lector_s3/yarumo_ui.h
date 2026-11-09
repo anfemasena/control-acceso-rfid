@@ -16,7 +16,7 @@ namespace YarumoUI {
   constexpr uint8_t TOUCH_REG = 0x01;
   constexpr int TOUCH_SDA = 42, TOUCH_SCL = 41, TOUCH_RST = 47, TOUCH_INT = 48;
   constexpr int BOOT_BUTTON = 0;
-  constexpr uint16_t GREEN = 0x35AA, ORANGE = 0xF3A4, DARK = 0x0823;
+  constexpr uint16_t GREEN = 0x35AA, ORANGE = 0xF3A4, DARK = 0x1A26;
   constexpr uint16_t PALE = 0xD6F3, MUTED = 0x83F0, RED = 0xF9C6;
   constexpr uint32_t RETRY_MS = 15000, PORTAL_TIMEOUT_MS = 600000;
   enum class Mode { WELCOME, OFFLINE, IDLE, PORTAL, NOTICE };
@@ -51,23 +51,43 @@ namespace YarumoUI {
     return result;
   }
 
-  static void mark(int x, int y, int scale) {
-    // Isotipo vectorial provisional: hojas verdes y acento naranja.
-    lcd->fillTriangle(x + 8*scale,y + 18*scale,
-                      x + 15*scale,y + 1*scale,
-                      x + 19*scale,y + 18*scale, GREEN);
-    lcd->fillTriangle(x + 20*scale,y + 20*scale,
-                      x + 27*scale,y + 5*scale,
-                      x + 30*scale,y + 20*scale, GREEN);
-    lcd->fillTriangle(x + 6*scale,y + 21*scale,
-                      x + 15*scale,y + 13*scale,
-                      x + 18*scale,y + 27*scale, ORANGE);
-    lcd->drawLine(x + 18*scale,y + 28*scale,
-                  x + 22*scale,y + 10*scale, PALE);
+  // Icono oficial Yarumo (hojas blancas y naranjas), de la identidad Yarumo POS.
+  // Fuente: yarumo-icon.webp, reducido a 64x64 y paleta de 3 colores.
+  // Comprimido con RLE: 197 bytes + 4 KiB RAM durante el dibujo.
+  static const char *logoRLE = "FCFCFCFCFCFCFCFCFCFCFCFCFC7C056806900D58128C1150168C1518090C0A141A8C19100D0C0E0C1E8C1D0811081604228C3508369039043694350436705904565455045258064D084E60514E6855427449083A7C45102E80290C0D1006042A7C29040D0405100D042A742D04111011042E6C3106111011366835041108110436742D040D080D041A040E9C1504210812B00D1019100EB0051C111C06D011F011F011F011F011F011F011F011F011F011F011F011F409FCFCFCFCFCFCFCFCFCFCFCFCFCB0";
+  static uint8_t logoMap[4096];
+  static bool logoReady = false;
+  static uint8_t hexDigit(char c) {
+    return c<='9' ? c-'0' : c-'A'+10;
+  }
+  static void unpackLogo() {
+    if(logoReady)return;
+    size_t pos=0;
+    for(size_t i=0;logoRLE[i] && logoRLE[i+1];i+=2) {
+      uint8_t packed=(hexDigit(logoRLE[i])<<4)|hexDigit(logoRLE[i+1]);
+      uint8_t count=packed>>2, color=packed&3;
+      while(count-- && pos<4096)logoMap[pos++]=color;
+    }
+    logoReady=(pos==4096);
+  }
+  static void mark(int x, int y, int size) {
+    unpackLogo();
+    const uint16_t palette[] = {0x1A26,0xE77D,0xFCE5};
+    for(int yy=0;yy<size;yy++) {
+      int sourceY=(yy*64)/size, run=0;
+      uint8_t previous=logoMap[sourceY*64];
+      for(int xx=1;xx<=size;xx++){
+        uint8_t color=xx<size?logoMap[sourceY*64+(xx*64)/size]:255;
+        if(color!=previous){
+          lcd->drawFastHLine(x+run,y+yy,xx-run,palette[previous<3?previous:0]);
+          run=xx;previous=color;
+        }
+      }
+    }
   }
   static void header() {
     lcd->fillScreen(DARK);
-    mark(6, 0, 1);
+    mark(5, 4, 28);
     lcd->setTextColor(PALE); lcd->setTextSize(2);
     lcd->setCursor(47, 8); lcd->print("YARUMO");
     lcd->setTextColor(ORANGE); lcd->setTextSize(1);
@@ -92,7 +112,7 @@ namespace YarumoUI {
   static void welcome() {
     mode=Mode::WELCOME; welcomeAt=millis();
     lcd->fillScreen(DARK);
-    mark(45,31,3);
+    mark(44,28,100);
     label(157,46,"YARUMO",PALE,3);
     label(159,80,"ACCESO",ORANGE,2);
     label(61,132,"CONTROL BIOMETRICO",MUTED,2);
