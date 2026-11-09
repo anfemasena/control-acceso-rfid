@@ -2,7 +2,7 @@
  Yarumo Acceso - lector de asistencia independiente
  Waveshare ESP32-S3-Touch-LCD-1.47 + AS608 (UART), 10 huellas por dispositivo.
  La identificación biométrica se efectúa EN EL AS608. No se extraen plantillas.
- La pantalla muestra estados; la UI táctil de configuración se desarrollará después.
+ Interfaz horizontal, bienvenida Yarumo, reloj NTP y portal Wi-Fi táctil.
  NO cargar sobre el lector original del control RFID de NUSEFA.
 */
 #include <WiFi.h>
@@ -32,17 +32,14 @@ HardwareSerial FingerSerial(1);
 Adafruit_Fingerprint finger(&FingerSerial);
 Arduino_DataBus *bus = new Arduino_ESP32SPI(LCD_DC, LCD_CS, LCD_SCK, LCD_MOSI);
 Arduino_GFX *gfx = new Arduino_ST7789(bus, LCD_RST, 1, false, 172, 320, 34, 0, 34, 0);
+#include "yarumo_ui.h"
 uint32_t lastPoll = 0, lastSync = 0, lastScan = 0;
 bool sensorReady = false;
 
 void screen(const String &title, const String &detail, uint16_t color=RGB565_WHITE) {
-  gfx->fillScreen(RGB565_BLACK);
-  gfx->setTextColor(RGB565_GREEN);gfx->setTextSize(2);gfx->setCursor(12,14);gfx->print("YARUMO ACCESO");
-  gfx->drawFastHLine(12,44,296,RGB565_DARKGREY);
-  gfx->setTextColor(color);gfx->setCursor(12,64);gfx->print(title.substring(0,23));
-  gfx->setTextColor(RGB565_WHITE);gfx->setTextSize(1);gfx->setCursor(12,106);gfx->print(detail.substring(0,46));
-  gfx->setCursor(12,144);gfx->print(WiFi.status()==WL_CONNECTED?"WIFI CONECTADO":"WIFI DESCONECTADO");
+  YarumoUI::notice(title,detail,color);
 }
+
 String newUUID() {
   uint8_t b[16];esp_fill_random(b,sizeof b);
   b[6]=(b[6]&0x0f)|0x40;b[8]=(b[8]&0x3f)|0x80;
@@ -62,12 +59,7 @@ bool configured(){
         String(DEVICE_TOKEN).length()>=40 && !String(DEVICE_TOKEN).startsWith("TOKEN_EXCLUSIVO") &&
         String(ROOT_CA_PEM).indexOf("REEMPLAZAR")<0;
 }
-void wifiConnect(){
- if(WiFi.status()==WL_CONNECTED)return;
- screen("Conectando...",WIFI_SSID);WiFi.mode(WIFI_STA);WiFi.begin(WIFI_SSID,WIFI_PASSWORD);
- for(int n=0;n<25 && WiFi.status()!=WL_CONNECTED;n++)delay(400);
- if(WiFi.status()==WL_CONNECTED){configTime(0,0,"pool.ntp.org","time.google.com");}
-}
+
 int request(const String &path,const String &method,const String &payload,String &response) {
  if(WiFi.status()!=WL_CONNECTED||!clockReady()||!configured())return -1;
  WiFiClientSecure client;client.setCACert(ROOT_CA_PEM);
@@ -174,20 +166,32 @@ void handleFinger(){
  uint32_t begin=millis();while(millis()-begin<3000 && finger.getImage()!=FINGERPRINT_NOFINGER)delay(80);
 }
 void setup(){
- Serial.begin(115200);pinMode(LCD_BL,OUTPUT);digitalWrite(LCD_BL,HIGH);
- gfx->begin();screen("Iniciando","Yarumo Acceso / laboratorio");
- if(!LittleFS.begin(true)){screen("ERROR FLASH","No se puede guardar eventos",RGB565_RED);while(true)delay(1000);}
+ Serial.begin(115200);
+ pinMode(LCD_BL,OUTPUT);digitalWrite(LCD_BL,HIGH);
+ gfx->begin(); // Rotacion 1 -> orientacion horizontal 320 x 172.
+ YarumoUI::begin(gfx,false); // Muestra la bienvenida incluso sin Wi-Fi.
+ if(!LittleFS.begin(true)){
+   screen("ERROR FLASH","No se pueden guardar eventos",RGB565_RED);
+   while(true)delay(1000);
+ }
  recoverQueue();
- FingerSerial.begin(SENSOR_BAUD,SERIAL_8N1,AS608_ESP_RX,AS608_ESP_TX);finger.begin(SENSOR_BAUD);
+ FingerSerial.begin(SENSOR_BAUD,SERIAL_8N1,AS608_ESP_RX,AS608_ESP_TX);
+ finger.begin(SENSOR_BAUD);
  sensorReady=finger.verifyPassword();
- if(!sensorReady)screen("ERROR AS608","Revise UART y alimentacion",RGB565_RED);
- if(!configured()){screen("SIN CONFIGURAR","Complete config.h y certificado",RGB565_RED);return;}
- wifiConnect();screen("SISTEMA LISTO","Acerque la huella al lector");
+ YarumoUI::setSensorReady(sensorReady);
+ if(!sensorReady)Serial.println("AS608 no responde: revisar alimentacion y UART");
+ if(!configured())Serial.println("Configurar DEVICE_TOKEN y ROOT_CA_PEM antes de usar API");
 }
+
 void loop(){
- if(!configured()){delay(2000);return;}
- if(WiFi.status()!=WL_CONNECTED && millis()-lastSync>20000){wifiConnect();lastSync=millis();}
+ // El portal, la reconexion Wi-Fi y el reloj funcionan aun sin token de API.
+ YarumoUI::tick();
+ if(YarumoUI::portalActive()){delay(40);return;}
+ if(!configured()){delay(80);return;}
  if(millis()-lastSync>SYNC_POLL_MS){syncEvents();lastSync=millis();}
- if(millis()-lastPoll>COMMAND_POLL_MS && sensorReady){pollCommands();lastPoll=millis();}
- handleFinger();delay(70);
+ if(millis()-lastPoll>COMMAND_POLL_MS && sensorReady && WiFi.status()==WL_CONNECTED){
+   pollCommands();lastPoll=millis();
+ }
+ handleFinger();
+ delay(70);
 }
