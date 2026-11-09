@@ -1,12 +1,16 @@
 #pragma once
-// Copiar este archivo a config.h y completar antes de compilar.
-// No subir config.h a GitHub. No copiar credenciales ni enlaces del sistema antiguo.
-const char *WIFI_SSID = "RED_WIFI_2_4_GHZ";
-const char *WIFI_PASSWORD = "CLAVE_WIFI_PRIVADA";
-const char *SERVER_BASE = "https://SERVICIO-YARUMO-NUEVO.onrender.com";
+// Copie a config.h. Nunca publique config.h: contiene credenciales privadas.
+// Wi-Fi es OPCIONAL: al encender, la pantalla permite configurar la red
+// desde un celular conectado al punto de acceso temporal del ESP32-S3.
+const char *WIFI_SSID = "";
+const char *WIFI_PASSWORD = "";
+
+// Plataforma YARUMO ACCESO (independiente del control RFID de NUSEFA).
+const char *SERVER_BASE = "https://yarumo-acceso-92u0.onrender.com";
+// Pegue el token propio del dispositivo creado desde Yarumo Acceso:
 const char *DEVICE_TOKEN = "TOKEN_EXCLUSIVO_CREADO_DESDE_YARUMO";
-// Certificado PEM de CA raíz que valide el servidor HTTPS elegido.
-// Necesario para HTTPS con validación real (nunca usar setInsecure).
+
+// CA raíz real del servidor HTTPS. No deshabilitar la validación TLS.
 const char *ROOT_CA_PEM = R"PEM(
 -----BEGIN CERTIFICATE-----
 REEMPLAZAR_POR_CERTIFICADO_CA_VERIFICADO
