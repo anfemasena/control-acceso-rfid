@@ -10,6 +10,8 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <time.h>
+#include <esp_sntp.h>
+#include "yarumo_rtc.h"
 
 namespace YarumoUI {
   constexpr uint8_t TOUCH_ADDR = 0x63;
@@ -26,7 +28,9 @@ namespace YarumoUI {
   static Mode mode = Mode::WELCOME;
   static volatile bool touchIRQ = false;
   static bool portalOn = false, routesReady = false, applyCredentials = false;
-  static bool sensorOK = false, timeConfigured = false, wasConnected = false;
+  static bool sensorOK = false, wasConnected = false;
+  static volatile bool ntpPending = false;
+  static void onNtpSync(struct timeval *) { ntpPending = true; }
   static String ssid, password, apSSID, apPassword, nextSSID, nextPassword;
   static uint32_t welcomeAt = 0, noticeUntil = 0, lastRetry = 0;
   static uint32_t lastClockDraw = 0, portalAt = 0, lastTouch = 0, bootHeldAt = 0;
@@ -118,10 +122,19 @@ namespace YarumoUI {
     label(61,132,"CONTROL BIOMETRICO",MUTED,2);
   }
   static void offline() {
-    if (mode==Mode::OFFLINE) return;
+    const String timeLabel=hasClock()?"Hora "+localClock(true):"Reloj sin sincronizar";
+    if (mode==Mode::OFFLINE) {
+      // Mantener el reloj en movimiento si existe DS3231 o NTP anterior.
+      static String previous;
+      if(previous==timeLabel)return;
+      previous=timeLabel;
+      lcd->fillRect(14,77,286,18,DARK);
+      label(14,79,timeLabel,PALE,1);
+      return;
+    }
     mode=Mode::OFFLINE; header();
     label(14,51,"SIN CONEXION WIFI",ORANGE,2);
-    label(14,79,hasClock()?"Hora "+localClock():"Sincronizacion pendiente",PALE,1);
+    label(14,79,timeLabel,PALE,1);
     button(13,104,294,50,"CONFIGURAR WIFI");
   }
   static void idle(bool force=false) {
@@ -272,6 +285,9 @@ La red temporal de configuracion se apaga al conectar.</small></p></body></html>
     // Ignorar valores demostrativos del ejemplo hasta que se configure.
     if(ssid.startsWith("RED_WIFI_"))ssid="";
     touchBegin();
+    setenv("TZ","COT5",1);tzset(); // America/Bogota UTC-5 sin horario de verano.
+    bool rtcRestored=YarumoRTC::restore();
+    Serial.println(rtcRestored?"DS3231: reloj recuperado":"RTC: a la espera de NTP");
     welcome();
     WiFi.setAutoReconnect(true);
     connectStation();
@@ -279,6 +295,11 @@ La red temporal de configuracion se apaga al conectar.</small></p></body></html>
   static void setSensorReady(bool ready) { sensorOK=ready; }
   static bool portalActive() { return portalOn; }
   static void tick() {
+    // El callback SNTP ocurre en otra tarea; escribir I2C solo en el loop.
+    if(ntpPending) {
+      ntpPending=false;
+      if(YarumoRTC::saveFromSystemClock()) Serial.println("DS3231 actualizado desde NTP");
+    }
     if(portalOn)portal.handleClient();
     if(applyCredentials){
       applyCredentials=false;
@@ -310,8 +331,8 @@ La red temporal de configuracion se apaga al conectar.</small></p></body></html>
     }
     bool connected=WiFi.status()==WL_CONNECTED;
     if(connected&&!wasConnected){
+      sntp_set_time_sync_notification_cb(onNtpSync);
       configTzTime("COT5","pool.ntp.org","time.google.com");
-      timeConfigured=true;
       wasConnected=true;
     }else if(!connected&&wasConnected){
       wasConnected=false;
