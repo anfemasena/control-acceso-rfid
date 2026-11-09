@@ -136,7 +136,7 @@ No activar el formato inicial para un equipo con registros reales. Si LittleFS f
 
 ### Comprobaciones automáticas de compilación
 
-Se añadió [`.github/workflows/yarumo-esp32.yml`](../../.github/workflows/yarumo-esp32.yml) para intentar compilar el sketch con el core Arduino ESP32 3.3.4 y las bibliotecas oficiales. Las pruebas Node [`tests/firmware-ui.test.js`](./tests/firmware-ui.test.js) validan contratos de orientación, logo, aprovisionamiento Wi-Fi, RTC y protección de registros. Ninguna prueba sustituye comprobar físicamente LCD, táctil, AS608 ni batería.
+Se añadió [`.github/workflows/yarumo-esp32.yml`](../.github/workflows/yarumo-esp32.yml) para intentar compilar el sketch con el core Arduino ESP32 3.3.4 y las bibliotecas oficiales. Las pruebas Node [`tests/firmware-ui.test.js`](./tests/firmware-ui.test.js) validan contratos de orientación, logo, aprovisionamiento Wi-Fi, RTC y protección de registros. Ninguna prueba sustituye comprobar físicamente LCD, táctil, AS608 ni batería.
 
 ### Ejemplo de API de lector
 
